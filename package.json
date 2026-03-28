@@ -1,0 +1,27 @@
+{
+  "name": "@agenttax/mppx",
+  "version": "1.0.0",
+  "description": "Tax middleware for MPP machine payments — sales tax + capital gains for AI agent transactions",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": ["mpp", "tax", "machine-payments", "ai-agents", "sales-tax", "capital-gains", "x402", "agenttax"],
+  "author": "Agentic Tax Solutions LLC",
+  "license": "MIT",
+  "homepage": "https://agenttax.io",
+  "repository": { "type": "git", "url": "https://github.com/AgentTax/agenttax-mppx.git" },
+  "peerDependencies": { "mppx": ">=0.4.0" },
+  "dependencies": { "geoip-lite": "^1.4.10" },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "@types/geoip-lite": "^1.4.4",
+    "mppx": "^0.4.8"
+  },
+  "engines": { "node": ">=18" }
+}
