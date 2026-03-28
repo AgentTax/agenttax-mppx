@@ -10,18 +10,37 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": ["mpp", "tax", "machine-payments", "ai-agents", "sales-tax", "capital-gains", "x402", "agenttax"],
+  "keywords": [
+    "mpp",
+    "tax",
+    "machine-payments",
+    "ai-agents",
+    "sales-tax",
+    "capital-gains",
+    "x402",
+    "agenttax"
+  ],
   "author": "Agentic Tax Solutions LLC",
   "license": "MIT",
   "homepage": "https://agenttax.io",
-  "repository": { "type": "git", "url": "https://github.com/AgentTax/agenttax-mppx.git" },
-  "peerDependencies": { "mppx": ">=0.4.0" },
-  "dependencies": { "geoip-lite": "^1.4.10" },
-  "devDependencies": {
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "@types/geoip-lite": "^1.4.4",
-    "mppx": "^0.4.8"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AgentTax/agenttax-mppx.git"
   },
-  "engines": { "node": ">=18" }
+  "peerDependencies": {
+    "mppx": ">=0.4.0"
+  },
+  "dependencies": {
+    "geoip-lite": "^1.4.10"
+  },
+  "devDependencies": {
+    "@types/geoip-lite": "^1.4.4",
+    "@types/node": "^25.5.0",
+    "mppx": "^0.4.8",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }
