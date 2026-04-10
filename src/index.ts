@@ -14,6 +14,10 @@ export function agentTax(config: AgentTaxConfig) {
   );
   const role = config.role || 'seller';
   const isB2B = config.isB2B || false;
+  // Default: reject the charge if AgentTax can't calculate tax. This matches
+  // the "conservative when in doubt" guardrail in the main product — silently
+  // charging base-amount-only is the inverse of that policy.
+  const onTaxUnavailable = config.onTaxUnavailable || 'reject';
 
   function charge(mppx: any, opts: ChargeOptions) {
     return async function taxMiddleware(req: any, res: any, next: any) {
@@ -48,6 +52,30 @@ export function agentTax(config: AgentTaxConfig) {
         counterparty_id: counterpartyId,
         is_b2b: isB2B,
       });
+
+      // ── Tax unavailable handling ──
+      // The client returns { tax_source: 'unavailable' } when the AgentTax
+      // API can't be reached or returns success=false. Charging the base
+      // amount in that state is a compliance bug: the merchant collects $0
+      // tax and has no receipt trail. Default is to reject; caller can opt
+      // into the legacy "allow" behavior explicitly.
+      if (taxResult.tax_source === 'unavailable' && onTaxUnavailable === 'reject') {
+        if (res?.status && res?.json) {
+          return res.status(503).json({
+            error: 'Tax calculation unavailable',
+            message: 'AgentTax API is unreachable. Charge rejected because tax cannot be calculated. Set { onTaxUnavailable: "allow" } in agentTax() config to bypass (not recommended).',
+            buyer_state: jurisdiction.state,
+            base_amount: baseAmount.toFixed(2),
+          });
+        }
+        // Non-Express-shaped response — surface via next() so hosts using a
+        // raw Node handler or a custom framework see the error.
+        const err = new Error('AgentTax tax calculation unavailable — charge rejected');
+        (err as any).status = 503;
+        (err as any).code = 'AGENTTAX_UNAVAILABLE';
+        if (typeof next === 'function') return next(err);
+        throw err;
+      }
 
       const taxAmount = taxResult.total_tax || 0;
       const total = Math.round((baseAmount + taxAmount) * 100) / 100;

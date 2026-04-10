@@ -80,4 +80,98 @@ describe('agentTax', () => {
     const chargeArgs = mockMppx.charge.mock.calls[0][0];
     expect(chargeArgs.amount).toBe('1.00');
   });
+
+  describe('onTaxUnavailable behavior (AgentTax API unreachable)', () => {
+    it('rejects the charge with 503 by default when AgentTax is unreachable', async () => {
+      // One-off failing fetch mock just for this test
+      const failingFetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+      vi.stubGlobal('fetch', failingFetch);
+
+      const tax = agentTax({ apiKey: 'atx_test', transactionType: 'compute', defaultState: 'TX' });
+      const mppxChargeFn = vi.fn().mockImplementation((_req: any, _res: any, next: any) => next());
+      const mockMppx = { charge: vi.fn().mockReturnValue(mppxChargeFn) };
+      const middleware = tax.charge(mockMppx as any, { amount: '1.00' });
+
+      const req = { headers: { 'x-buyer-state': 'TX' }, ip: '127.0.0.1', socket: { remoteAddress: '127.0.0.1' } };
+      const jsonSpy = vi.fn();
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: jsonSpy,
+        setHeader: vi.fn(),
+        end: vi.fn(),
+      };
+      const next = vi.fn();
+
+      await middleware(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(jsonSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Tax calculation unavailable',
+          buyer_state: 'TX',
+          base_amount: '1.00',
+        })
+      );
+      // Critically: mppx.charge() must NOT have been called when we reject.
+      expect(mockMppx.charge).not.toHaveBeenCalled();
+
+      // Restore the happy-path fetch mock for subsequent tests.
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true, total_tax: 0.07, combined_rate: 0.0825,
+          buyer_state: 'TX', jurisdiction: 'Texas',
+          sales_tax: { rate: 0.0625, local_rate: 0.02, combined_rate: 0.0825,
+            state_rate: 0.0625, jurisdiction: 'Texas', classification: 'data_processing', note: null },
+          audit_trail: {}, classification_basis: 'data_processing',
+          transaction_id: 'txn_test',
+        }),
+      }));
+    });
+
+    it('allows the charge with $0 tax when onTaxUnavailable="allow"', async () => {
+      const failingFetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+      vi.stubGlobal('fetch', failingFetch);
+
+      const tax = agentTax({
+        apiKey: 'atx_test',
+        transactionType: 'compute',
+        defaultState: 'TX',
+        onTaxUnavailable: 'allow',
+      });
+      const mppxChargeFn = vi.fn().mockImplementation((_req: any, _res: any, next: any) => next());
+      const mockMppx = { charge: vi.fn().mockReturnValue(mppxChargeFn) };
+      const middleware = tax.charge(mockMppx as any, { amount: '1.00' });
+
+      const req = { headers: { 'x-buyer-state': 'TX' }, ip: '127.0.0.1', socket: { remoteAddress: '127.0.0.1' } };
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+        setHeader: vi.fn(),
+        end: vi.fn(),
+      };
+      const next = vi.fn();
+
+      await middleware(req, res, next);
+
+      // Legacy behavior: charge proceeds with base amount, mppx.charge() is called.
+      expect(mockMppx.charge).toHaveBeenCalled();
+      const chargeArgs = mockMppx.charge.mock.calls[0][0];
+      expect(chargeArgs.amount).toBe('1.00');
+      expect(res.status).not.toHaveBeenCalled();
+
+      // Restore happy-path fetch.
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true, total_tax: 0.07, combined_rate: 0.0825,
+          buyer_state: 'TX', jurisdiction: 'Texas',
+          sales_tax: { rate: 0.0625, local_rate: 0.02, combined_rate: 0.0825,
+            state_rate: 0.0625, jurisdiction: 'Texas', classification: 'data_processing', note: null },
+          audit_trail: {}, classification_basis: 'data_processing',
+          transaction_id: 'txn_test',
+        }),
+      }));
+    });
+  });
 });

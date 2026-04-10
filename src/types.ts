@@ -9,6 +9,16 @@ export interface AgentTaxConfig {
   asset?: AssetConfig;
   baseUrl?: string;
   counterpartyIdFrom?: 'ip' | 'source' | 'header';
+  /**
+   * What to do when the AgentTax API is unreachable and tax cannot be
+   * calculated. The AgentTax guardrail is "conservative when in doubt" —
+   * the default behavior is to REJECT the charge with HTTP 503 so the
+   * caller gets a clear signal instead of silently undercharging.
+   *
+   *   'reject' (default) — respond 503, do not forward to mppx.charge()
+   *   'allow'            — proceed with $0 tax and a receipt flag (legacy)
+   */
+  onTaxUnavailable?: 'reject' | 'allow';
 }
 
 export interface AssetConfig {
