@@ -80,6 +80,42 @@ Buyers can self-report jurisdiction for higher accuracy:
 
 The middleware cross-verifies against IP and flags mismatches. Datacenter/VPN IPs are detected and flagged automatically.
 
+## When AgentTax Is Unreachable
+
+By default, if the AgentTax API can't be reached, the middleware **rejects the charge with HTTP 503**. This is the conservative default — charging base-amount-only with no tax receipt is a compliance gap. Your caller sees the error and can retry.
+
+You can opt into legacy fail-open behavior with `onTaxUnavailable: 'allow'`. **Read the warning below before doing this.**
+
+### ⚠ Warning on `onTaxUnavailable: 'allow'` (fail-open)
+
+Setting `onTaxUnavailable: 'allow'` causes the middleware to proceed with a **$0-tax receipt** when the AgentTax API is unreachable. The charge still completes; the buyer is undercharged; you have no calculation trail for that transaction.
+
+Use this setting only if **both** are true:
+
+1. Your flow is demonstrably non-taxable in every jurisdiction you reach (e.g. SKUs limited to no-sales-tax states, or an exempt-sale-only platform).
+2. You have a **separate compliance control** outside this middleware — an independent tax engine, a manual review queue, or a documented legal opinion that $0 tax is correct for every possible buyer you can reach.
+
+Every fail-open invocation now emits:
+
+- A `console.warn` line prefixed `[agenttax/mppx] FAIL-OPEN:` containing a structured JSON payload with timestamp, buyer state/ZIP, base amount, transaction type, and counterparty ID.
+- An optional `onFailOpenAudit(entry)` callback you provide in config — use it to ship the event to Sentry, Datadog, a DB audit table, or anywhere else your retention policy requires.
+
+```ts
+const tax = agentTax({
+  apiKey: process.env.AGENTTAX_API_KEY,
+  transactionType: 'compute',
+  onTaxUnavailable: 'allow',            // opt-in; read warning above
+  onFailOpenAudit: (entry) => {
+    await db.query(
+      'INSERT INTO fail_open_audit(event, ts, state, amount, counterparty, tx_type) VALUES ($1,$2,$3,$4,$5,$6)',
+      [entry.event, entry.timestamp, entry.buyer_state, entry.base_amount, entry.counterparty_id, entry.transaction_type]
+    );
+  },
+});
+```
+
+If you run with `'allow'` and no `onFailOpenAudit` sink, you still get the stderr line — but shipping those to a proper audit store (not just Vercel function logs, which rotate) is on you.
+
 ## Configuration
 
 | Option | Type | Default | Description |
@@ -97,6 +133,8 @@ The middleware cross-verifies against IP and flags mismatches. Datacenter/VPN IP
 | `asset.residentState` | string | - | State for capital gains rate |
 | `baseUrl` | string | https://agenttax.io | AgentTax API base URL |
 | `counterpartyIdFrom` | string | 'source' | How to derive counterparty ID: ip, source, or header |
+| `onTaxUnavailable` | string | 'reject' | 'reject' (503 on API outage) or 'allow' (fail-open, logs audit; see warning above) |
+| `onFailOpenAudit` | function | - | Optional callback `(entry) => void` invoked for every fail-open. Use to ship to your audit store. |
 
 ## Get an API Key
 

@@ -1,6 +1,6 @@
 {
   "name": "@agenttax/mppx",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Tax middleware for MPP machine payments — sales tax + capital gains for AI agent transactions",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

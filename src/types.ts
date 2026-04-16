@@ -17,8 +17,40 @@ export interface AgentTaxConfig {
    *
    *   'reject' (default) — respond 503, do not forward to mppx.charge()
    *   'allow'            — proceed with $0 tax and a receipt flag (legacy)
+   *
+   * ⚠ The 'allow' setting is a fail-open. Every fail-open invocation logs
+   *    a structured audit entry to stderr via console.warn, and (if
+   *    provided) calls onFailOpenAudit(entry) so the host can ship the
+   *    event to a proper audit sink. Do not run with 'allow' in production
+   *    without that sink wired up.
    */
   onTaxUnavailable?: 'reject' | 'allow';
+
+  /**
+   * Optional callback invoked every time the 'allow' fail-open path fires.
+   * Receives a structured audit entry (see FailOpenAuditEntry). Use it to
+   * emit to Sentry, Datadog, a DB audit table, etc. Exceptions thrown by
+   * the callback are caught and logged but do not block the charge.
+   */
+  onFailOpenAudit?: (entry: FailOpenAuditEntry) => void | Promise<void>;
+}
+
+/**
+ * Structured record emitted on every fail-open invocation. Persist these;
+ * they are the evidence trail for "we knowingly charged $0 tax because
+ * our tax service was unavailable". Retain per your compliance policy.
+ */
+export interface FailOpenAuditEntry {
+  event: 'agenttax_mppx_fail_open';
+  timestamp: string; // ISO8601
+  reason: 'tax_source_unavailable';
+  config_setting: 'onTaxUnavailable=allow';
+  buyer_state: string | null;
+  buyer_zip: string | null;
+  base_amount: string;
+  transaction_type: string;
+  counterparty_id: string;
+  tax_collected: number;
 }
 
 export interface AssetConfig {

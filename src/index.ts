@@ -1,11 +1,11 @@
 import { resolveJurisdiction } from './jurisdiction.js';
 import { AgentTaxClient } from './agenttax-client.js';
-import type { AgentTaxConfig, ChargeOptions, TaxReceipt } from './types.js';
+import type { AgentTaxConfig, ChargeOptions, TaxReceipt, FailOpenAuditEntry } from './types.js';
 
 export { resolveJurisdiction } from './jurisdiction.js';
 export { AgentTaxClient } from './agenttax-client.js';
 export { isValidState } from './jurisdiction.js';
-export type { AgentTaxConfig, TaxReceipt, JurisdictionResult, JurisdictionVerification } from './types.js';
+export type { AgentTaxConfig, TaxReceipt, JurisdictionResult, JurisdictionVerification, FailOpenAuditEntry } from './types.js';
 
 export function agentTax(config: AgentTaxConfig) {
   const client = new AgentTaxClient(
@@ -75,6 +75,40 @@ export function agentTax(config: AgentTaxConfig) {
         (err as any).code = 'AGENTTAX_UNAVAILABLE';
         if (typeof next === 'function') return next(err);
         throw err;
+      }
+
+      // Fail-open audit: when allow is set and the API is down, we're about
+      // to process a $0-tax charge. Emit a structured record so the host can
+      // prove (a) the fail-open happened, (b) under what config, and (c) for
+      // which transaction. Every fail-open produces a warn line AND calls
+      // the caller's onFailOpenAudit hook if supplied. Do not swallow.
+      if (taxResult.tax_source === 'unavailable' && onTaxUnavailable === 'allow') {
+        const auditEntry: FailOpenAuditEntry = {
+          event: 'agenttax_mppx_fail_open',
+          timestamp: new Date().toISOString(),
+          reason: 'tax_source_unavailable',
+          config_setting: 'onTaxUnavailable=allow',
+          buyer_state: jurisdiction.state,
+          buyer_zip: jurisdiction.zip || null,
+          base_amount: baseAmount.toFixed(2),
+          transaction_type: config.transactionType,
+          counterparty_id: counterpartyId,
+          tax_collected: 0,
+        };
+        // Single-line JSON for log ingestion friendliness.
+        console.warn('[agenttax/mppx] FAIL-OPEN: tax unavailable, allowing $0 tax per config. ' + JSON.stringify(auditEntry));
+        if (typeof config.onFailOpenAudit === 'function') {
+          try {
+            const maybePromise = config.onFailOpenAudit(auditEntry);
+            if (maybePromise && typeof (maybePromise as any).catch === 'function') {
+              (maybePromise as Promise<void>).catch((err) =>
+                console.error('[agenttax/mppx] onFailOpenAudit rejected:', err),
+              );
+            }
+          } catch (err) {
+            console.error('[agenttax/mppx] onFailOpenAudit threw:', err);
+          }
+        }
       }
 
       const taxAmount = taxResult.total_tax || 0;

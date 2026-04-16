@@ -129,15 +129,18 @@ describe('agentTax', () => {
       }));
     });
 
-    it('allows the charge with $0 tax when onTaxUnavailable="allow"', async () => {
+    it('allows the charge with $0 tax when onTaxUnavailable="allow" and emits fail-open audit', async () => {
       const failingFetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
       vi.stubGlobal('fetch', failingFetch);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const auditSink = vi.fn();
 
       const tax = agentTax({
         apiKey: 'atx_test',
         transactionType: 'compute',
         defaultState: 'TX',
         onTaxUnavailable: 'allow',
+        onFailOpenAudit: auditSink,
       });
       const mppxChargeFn = vi.fn().mockImplementation((_req: any, _res: any, next: any) => next());
       const mockMppx = { charge: vi.fn().mockReturnValue(mppxChargeFn) };
@@ -159,6 +162,22 @@ describe('agentTax', () => {
       const chargeArgs = mockMppx.charge.mock.calls[0][0];
       expect(chargeArgs.amount).toBe('1.00');
       expect(res.status).not.toHaveBeenCalled();
+
+      // Fail-open audit: warn line AND callback MUST both fire exactly once.
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toMatch(/FAIL-OPEN/);
+      expect(auditSink).toHaveBeenCalledTimes(1);
+      const entry = auditSink.mock.calls[0][0];
+      expect(entry.event).toBe('agenttax_mppx_fail_open');
+      expect(entry.reason).toBe('tax_source_unavailable');
+      expect(entry.config_setting).toBe('onTaxUnavailable=allow');
+      expect(entry.buyer_state).toBe('TX');
+      expect(entry.base_amount).toBe('1.00');
+      expect(entry.transaction_type).toBe('compute');
+      expect(entry.tax_collected).toBe(0);
+      expect(typeof entry.timestamp).toBe('string');
+
+      warnSpy.mockRestore();
 
       // Restore happy-path fetch.
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
